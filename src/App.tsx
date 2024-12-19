@@ -1,23 +1,22 @@
 /* eslint-disable jsx-a11y/label-has-associated-control */
 /* eslint-disable jsx-a11y/control-has-associated-label */
-import React, { useEffect, useMemo, useState } from 'react';
-import { UserWarning } from './components/UserWarning/UserWarning';
+import React, { useEffect, useState } from 'react';
+import { UserWarning } from './UserWarning';
 import { getTodos, USER_ID } from './api/todos';
 import { Todo } from './types/Todo';
 import { TodoFilter } from './types/TodoFilter';
-import classNames from 'classnames';
 import { TodoList } from './components/TodoList';
 import { TodoFooter } from './components/TodoFooter';
 import * as todoServices from './api/todos';
 import { TodoHeader } from './components/TodoHeader';
+import { ErrorNotification } from './components/ErrorNotification';
 
 export const App: React.FC = () => {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<TodoFilter>(TodoFilter.All);
   const [tempTodo, setTempTodo] = useState<Todo | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadingId, setLoadingId] = useState<number | number[]>(0);
+  const [todosInProcess, setTodosInProcess] = useState<number[]>([0]);
 
   // #region loadTodos
   const loadTodos = async () => {
@@ -56,110 +55,97 @@ export const App: React.FC = () => {
     }
   });
 
-  const completedTodos = useMemo(() => {
-    return todos.filter(todo => todo.completed);
-  }, [todos]);
-
   if (!USER_ID) {
     return <UserWarning />;
   }
 
   // #endregion
-
+  // #region todoServices
   const addTodo = async (newTodo: Todo) => {
-    setLoading(true);
-
-    setLoadingId(newTodo.id);
-
     try {
       const addedTodo = await todoServices.addTodo(newTodo);
 
       setTodos(prevTodos => [...prevTodos].concat(addedTodo));
     } finally {
       setTempTodo(null);
-      setLoading(false);
     }
   };
 
   const deleteTodo = async (id: number | number[]) => {
-    setLoading(true);
-
     const ids = Array.isArray(id) ? id : [id];
 
-    setLoadingId(ids);
+    setTodosInProcess(currentTodo => [...currentTodo, ...ids]);
 
     try {
-      const deletePromise = ids.map(async i => {
-        try {
-          await todoServices.deleteTodo(i);
+      const results = await Promise.all(
+        ids.map(async i => {
+          try {
+            await todoServices.deleteTodo(i);
 
-          return i;
-        } catch {
-          setError('Unable to delete a todo');
+            return i;
+          } catch {
+            setError('Unable to delete a todo');
 
-          return null;
-        }
-      });
-      const results = await Promise.all(deletePromise);
+            return null;
+          }
+        }),
+      );
 
       const successDelete = results.filter(result => result !== null);
 
       setTodos(todos.filter(todo => !successDelete.includes(todo.id)));
     } finally {
-      setLoading(false);
+      setTodosInProcess(currentId => currentId.filter(i => !ids.includes(i)));
     }
   };
 
   const updateTodo = async (updatedTodo: Todo | Todo[]) => {
-    setLoading(true);
+    const ids = Array.isArray(updatedTodo)
+      ? updatedTodo.map(todo => todo.id)
+      : [updatedTodo.id];
 
-    const ids = !Array.isArray(updatedTodo)
-      ? updatedTodo.id
-      : updatedTodo.map(todo => todo.id);
+    setTodosInProcess(currentTodo => [...currentTodo, ...ids]);
 
-    setLoadingId(ids);
-
-    const handleUpdatedTodo = ({
-      title,
-      id,
-      completed,
-    }: Omit<Todo, 'userId'>) => {
-      return todoServices.updatedTodo({
-        title,
-        id,
-        completed,
-      });
+    const handleUpdatedTodo = async (todo: Omit<Todo, 'userId'>) => {
+      return todoServices.updatedTodo(todo);
     };
 
     try {
+      let updatedTodos: Todo[] = [];
+
       if (Array.isArray(updatedTodo)) {
-        const updatedTodos = await Promise.all(
-          updatedTodo.map(todo => handleUpdatedTodo(todo)),
-        );
+        const updatePromises = updatedTodo.map(todo => handleUpdatedTodo(todo));
+        const results = await Promise.allSettled(updatePromises);
 
-        setTodos(prevTodos =>
-          prevTodos.map(prevTodo => {
-            const updatedTodoItem = updatedTodos.find(
-              todo => prevTodo.id === todo.id,
-            );
-
-            return updatedTodoItem ? updatedTodoItem : prevTodo;
-          }),
-        );
+        updatedTodos = results
+          .filter(
+            (result): result is PromiseFulfilledResult<Todo> =>
+              result.status === 'fulfilled',
+          )
+          .map(result => result.value);
       } else {
-        await handleUpdatedTodo(updatedTodo);
-        setTodos(prevTodos =>
-          prevTodos.map(todo =>
-            todo.id === updatedTodo.id ? updatedTodo : todo,
-          ),
-        );
+        const updated = await handleUpdatedTodo(updatedTodo);
+
+        updatedTodos = updated ? [updated] : [];
       }
+
+      setTodos(prevTodos =>
+        prevTodos.map(prevTodo => {
+          const updatedTodoItem = updatedTodos.find(
+            todo => prevTodo.id === todo.id,
+          );
+
+          return updatedTodoItem ? updatedTodoItem : prevTodo;
+        }),
+      );
     } catch {
       setError('Unable to update a todo');
     } finally {
-      setLoading(false);
+      setTodosInProcess(currentId => currentId.filter(id => !ids.includes(id)));
     }
   };
+
+  // #endregion
 
   return (
     <div className="todoapp">
@@ -169,50 +155,32 @@ export const App: React.FC = () => {
         <TodoHeader
           todos={todos}
           onError={setError}
-          onSubmit={addTodo}
           onTempTodo={setTempTodo}
-          onCompleted={updateTodo}
+          onAdd={addTodo}
+          onUpdate={updateTodo}
         />
 
-        {/* Hide the footer if there are no todos  */}
-
-        {todos.length > 0 && (
+        {(todos.length > 0 || tempTodo) && (
           <TodoList
             todos={filteredTodos}
-            onCompleted={updateTodo}
             tempTodo={tempTodo}
+            todosInProcess={todosInProcess}
+            onUpdate={updateTodo}
             onDelete={deleteTodo}
-            loading={loading}
-            loadingId={loadingId}
           />
         )}
 
-        {todos.length > 0 && (
+        {(todos.length > 0 || tempTodo) && (
           <TodoFooter
-            completedTodos={completedTodos}
+            todos={todos}
             filter={filter}
-            onChange={setFilter}
+            onFilter={setFilter}
             onDelete={deleteTodo}
-            activeItems={todos.length - completedTodos.length}
           />
         )}
       </div>
 
-      <div
-        data-cy="ErrorNotification"
-        className={classNames(
-          'notification is-danger is-light has-text-weight-normal',
-          { hidden: !error },
-        )}
-      >
-        <button
-          data-cy="HideErrorButton"
-          type="button"
-          className="delete"
-          onClick={() => setError('')}
-        />
-        {error}
-      </div>
+      <ErrorNotification error={error} onError={setError} />
     </div>
   );
 };

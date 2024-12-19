@@ -1,30 +1,35 @@
 import classNames from 'classnames';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Todo } from '../../types/Todo';
 import { TodoFilter } from '../../types/TodoFilter';
 
 interface Props {
-  completedTodos: Todo[] | [];
+  todos: Todo[];
   filter: string;
-  onChange: (filter: TodoFilter) => void;
+  onFilter: (filter: TodoFilter) => void;
   onDelete: (arrayId: number[]) => Promise<void>;
-  activeItems: number;
 }
 
 export const TodoFooter: React.FC<Props> = ({
-  completedTodos,
+  todos,
   filter,
-  onChange,
+  onFilter,
   onDelete,
-  activeItems,
 }) => {
+  const completedTodos = useMemo(() => {
+    return todos.filter(todo => todo.completed);
+  }, [todos]);
+
+  const activeItems = useMemo(() => {
+    return todos.length - completedTodos.length;
+  }, [completedTodos, todos]);
+
   return (
     <footer className="todoapp__footer" data-cy="Footer">
       <span className="todo-count" data-cy="TodosCounter">
         {activeItems} items left
       </span>
 
-      {/* Active link should have the 'selected' class */}
       <nav className="filter" data-cy="Filter">
         {Object.values(TodoFilter).map(filterOption => (
           <a
@@ -34,14 +39,13 @@ export const TodoFooter: React.FC<Props> = ({
               selected: filterOption === filter,
             })}
             data-cy={`FilterLink${filterOption.charAt(0).toUpperCase() + filterOption.slice(1)}`}
-            onClick={() => onChange(filterOption)}
+            onClick={() => onFilter(filterOption)}
           >
             {filterOption.charAt(0).toUpperCase() + filterOption.slice(1)}
           </a>
         ))}
       </nav>
 
-      {/* this button should be disabled if there are no completed todos */}
       <button
         type="button"
         className="todoapp__clear-completed"

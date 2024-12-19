@@ -4,90 +4,61 @@ import { Todo } from '../../types/Todo';
 
 interface Props {
   todo: Todo;
-  loading: boolean;
-  loadingId: number | number[];
+  todosInProcess: number[];
+  onUpdate: (todo: Todo) => void;
   onDelete: (id: number) => void;
-  onCompleted: (todo: Todo) => void;
 }
 
 export const TodoItem: React.FC<Props> = ({
   todo,
-  loading,
-  loadingId,
+  todosInProcess,
+  onUpdate,
   onDelete,
-  onCompleted,
 }) => {
-  const [updatedTitle, setUpdatedTitle] = useState(todo.title);
-  const [inputValue, setInputValue] = useState(todo.title);
-  const [update, setUpdate] = useState(false);
+  const { title, id, completed } = todo;
+
+  const [updatedTitle, setUpdatedTitle] = useState(title);
+  const [isEditing, setIsEditing] = useState(false);
   const refInput = useRef<HTMLInputElement>(null);
-  const { title, id, userId, completed } = todo;
 
   useEffect(() => {
     setUpdatedTitle(title);
-    setUpdate(false);
+    setIsEditing(false);
   }, [title]);
 
   useEffect(() => {
-    if (refInput.current) {
-      refInput.current?.focus();
+    if (isEditing && refInput.current) {
+      refInput.current.focus();
     }
-  }, [updatedTitle]);
+  }, [isEditing]);
 
   const handleTodoCompleted = () => {
-    const isCompleted = completed ? false : true;
-
-    onCompleted({
-      title,
-      id,
-      userId,
-      completed: isCompleted,
-    });
+    onUpdate({ ...todo, completed: !completed });
   };
 
-  const handleBlur = (event: React.FormEvent) => {
+  const handleOnSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (title === updatedTitle) {
-      setUpdate(false);
+    if (updatedTitle.trim() === title) {
+      setIsEditing(false);
 
       return;
-    }
-
-    if (updatedTitle === '') {
+    } else if (updatedTitle.trim() === '') {
       onDelete(todo.id);
-    } else {
-      onCompleted({
-        title: updatedTitle,
-        id,
-        userId,
-        completed,
-      });
+    } else if (updatedTitle !== title) {
+      onUpdate({ ...todo, title: updatedTitle.trim() });
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') {
-      setUpdate(false);
-      setInputValue(todo.title);
-      setUpdatedTitle(todo.title);
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      setIsEditing(false);
+      setUpdatedTitle(title);
     }
   };
 
   const handleUpdateTitle = (event: React.ChangeEvent<HTMLInputElement>) => {
-    event.preventDefault();
-
-    setUpdatedTitle(event.target.value.trim());
-    setInputValue(event.target.value);
-  };
-
-  const isLoading = (currentLoadingId: number) => {
-    return (
-      loading &&
-      (typeof loadingId === 'number'
-        ? loadingId === currentLoadingId
-        : loadingId.includes(currentLoadingId))
-    );
+    setUpdatedTitle(event.target.value);
   };
 
   return (
@@ -99,20 +70,19 @@ export const TodoItem: React.FC<Props> = ({
           type="checkbox"
           className="todo__status"
           checked={completed}
-          value={inputValue}
-          onChange={() => handleTodoCompleted()}
+          onChange={handleTodoCompleted}
         />
-        {/* accessible text for the label */}
+        {/* accessible text */}
       </label>
 
-      {!update ? (
+      {!isEditing ? (
         <>
           <span
             data-cy="TodoTitle"
             className="todo__title"
-            onDoubleClick={() => setUpdate(true)}
+            onDoubleClick={() => setIsEditing(true)}
           >
-            {title}
+            {updatedTitle ? updatedTitle : title}
           </span>
           <button
             type="button"
@@ -124,15 +94,15 @@ export const TodoItem: React.FC<Props> = ({
           </button>
         </>
       ) : (
-        <form onSubmit={handleBlur}>
+        <form onSubmit={handleOnSubmit}>
           <input
             data-cy="TodoTitleField"
             type="text"
             className="todo__title-field"
             ref={refInput}
-            value={inputValue}
+            value={updatedTitle}
             onChange={handleUpdateTitle}
-            onBlur={handleBlur}
+            onBlur={handleOnSubmit}
             onKeyDown={handleKeyDown}
             autoFocus
           />
@@ -142,7 +112,7 @@ export const TodoItem: React.FC<Props> = ({
       <div
         data-cy="TodoLoader"
         className={classNames('modal overlay', {
-          'is-active': isLoading(id),
+          'is-active': todosInProcess.includes(id),
         })}
       >
         <div className="modal-background has-background-white-ter" />

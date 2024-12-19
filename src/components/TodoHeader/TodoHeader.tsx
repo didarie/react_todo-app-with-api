@@ -1,66 +1,57 @@
 import classNames from 'classnames';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Todo } from '../../types/Todo';
 import { TodoForm } from '../TodoForm';
 
 interface Props {
   todos: Todo[];
   onError: (error: string) => void;
-  onSubmit: (todo: Todo) => Promise<void>;
   onTempTodo: (todo: Todo | null) => void;
-  onCompleted: (todos: Todo[]) => void;
+  onAdd: (todo: Todo) => Promise<void>;
+  onUpdate: (todos: Todo[]) => void;
 }
 
 export const TodoHeader: React.FC<Props> = ({
   todos,
   onError,
-  onSubmit,
   onTempTodo,
-  onCompleted,
+  onAdd,
+  onUpdate,
 }) => {
-  const handleAllCompleted = (classes: string) => {
-    const isActive = classes.includes('active');
+  const allCompleted = todos.every(todo => todo.completed);
 
+  const toggleAll = useCallback(() => {
     const updatedTodos = todos
-      .filter(todo => (isActive ? todo.completed : !todo.completed))
-      .map(todo => {
-        const { title, id, userId } = todo;
-
-        return {
-          title,
-          id,
-          userId,
-          completed: !isActive,
-        };
-      });
+      .filter(todo => (allCompleted ? todo.completed : !todo.completed))
+      .map(todo => ({
+        ...todo,
+        completed: !allCompleted,
+      }));
 
     if (updatedTodos.length > 0) {
-      return onCompleted(updatedTodos);
+      onUpdate(updatedTodos);
     }
-  };
+  }, [todos, allCompleted, onUpdate]);
 
   return (
     <header className="todoapp__header">
-      {/* this button should have `active` class only if all todos are completed */}
       {todos.length > 0 && (
         <button
           type="button"
           className={classNames('todoapp__toggle-all', {
-            active: todos.every(todo => todo.completed),
+            active: allCompleted,
           })}
           data-cy="ToggleAllButton"
-          onClick={() =>
-            handleAllCompleted(
-              classNames('todoapp__toggle-all', {
-                active: todos.every(todo => todo.completed),
-              }),
-            )
-          }
+          onClick={toggleAll}
         />
       )}
 
-      {/* Add a todo on form submit */}
-      <TodoForm onError={onError} onSubmit={onSubmit} onTempTodo={onTempTodo} />
+      <TodoForm
+        todos={todos}
+        onError={onError}
+        onAdd={onAdd}
+        onTempTodo={onTempTodo}
+      />
     </header>
   );
 };

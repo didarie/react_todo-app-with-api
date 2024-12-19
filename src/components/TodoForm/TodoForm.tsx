@@ -1,22 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Todo } from '../../types/Todo';
 import { USER_ID } from '../../api/todos';
+import { Todo } from '../../types/Todo';
 
 interface Props {
+  todos: Todo[];
   onError: (error: string) => void;
-  onSubmit: (todo: Todo) => Promise<void>;
+  onAdd: (todo: Todo) => Promise<void>;
   onTempTodo: (todo: Todo | null) => void;
 }
 
 export const TodoForm: React.FC<Props> = ({
+  todos,
   onError,
-  onSubmit,
+  onAdd,
   onTempTodo,
 }) => {
-  const [inputValue, setInputValue] = useState('');
   const [title, setTitle] = useState('');
-  const [userId] = useState(USER_ID);
-  const [completed] = useState(false);
   const [isDisabled, setIsDisabled] = useState(false);
   const refInput = useRef<HTMLInputElement>(null);
 
@@ -24,35 +23,45 @@ export const TodoForm: React.FC<Props> = ({
     if (refInput.current) {
       refInput.current.focus();
     }
-  }, [isDisabled]);
+  }, [todos, isDisabled]);
 
   const reset = () => {
-    setInputValue('');
     setTitle('');
     onTempTodo(null);
   };
 
-  const handleOnSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleOnSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!title) {
+    if (title.trim() === '') {
       onError('Title should not be empty');
 
       return;
     }
 
     setIsDisabled(true);
-    onTempTodo({ title, userId, id: 0, completed });
 
-    onSubmit({ title, userId, id: 0, completed })
-      .then(reset)
-      .catch(() => onError('Unable to add a todo'))
-      .finally(() => setIsDisabled(false));
+    const newTodo: Todo = {
+      title: title.trim(),
+      userId: USER_ID,
+      id: 0,
+      completed: false,
+    };
+
+    onTempTodo(newTodo);
+
+    try {
+      await onAdd(newTodo);
+      reset();
+    } catch {
+      onError('Unable to add a todo');
+    } finally {
+      setIsDisabled(false);
+    }
   };
 
   const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setTitle(event.target.value.trim());
-    setInputValue(event.target.value);
+    setTitle(event.target.value);
   };
 
   return (
@@ -64,7 +73,7 @@ export const TodoForm: React.FC<Props> = ({
         placeholder="What needs to be done?"
         disabled={isDisabled}
         ref={refInput}
-        value={inputValue}
+        value={title}
         onChange={handleTitleChange}
         autoFocus
       />
